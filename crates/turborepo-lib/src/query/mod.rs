@@ -37,8 +37,10 @@ pub enum Error {
     #[error("failed to serialize result: {0}")]
     Serde(#[from] serde_json::Error),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Run(#[from] crate::run::Error),
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Path(#[from] turbopath::PathError),
 }
 
