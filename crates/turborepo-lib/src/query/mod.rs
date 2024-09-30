@@ -1,23 +1,25 @@
 mod file;
 mod package;
 mod task;
+mod server;
 
 use std::{io, sync::Arc};
 
 use async_graphql::{http::GraphiQLSource, *};
-use async_graphql_axum::GraphQL;
-use axum::{response, response::IntoResponse, routing::get, Router};
+use axum::{response, response::IntoResponse};
 use itertools::Itertools;
 use miette::Diagnostic;
 use package::Package;
+pub use server::run_server;
 use thiserror::Error;
-use tokio::{net::TcpListener, select};
+use tokio::select;
 use turbo_trace::TraceError;
 use turbopath::AbsoluteSystemPathBuf;
 use turborepo_repository::package_graph::PackageName;
 
 use crate::{
     query::{file::File, task::Task},
+    get_version,
     run::{builder::RunBuilder, Run},
     signal::SignalHandler,
 };
@@ -42,6 +44,8 @@ pub enum Error {
     #[error(transparent)]
     #[diagnostic(transparent)]
     Path(#[from] turbopath::PathError),
+    #[error(transparent)]
+    UI(#[from] turborepo_ui::Error),
 }
 
 pub struct RepositoryQuery {
@@ -292,6 +296,7 @@ impl RepositoryQuery {
         &self,
         base: Option<String>,
         head: Option<String>,
+        filter: Option<PackagePredicate>,
     ) -> Result<Array<Package>, Error> {
         let mut opts = self.run.opts().clone();
         opts.scope_opts.affected_range = Some((base, head));
@@ -308,6 +313,7 @@ impl RepositoryQuery {
             run: self.run.clone(),
             name: package,
         })
+        .filter(|package| filter.as_ref().map_or(true, |f| f.check(package)))
         .sorted_by(|a, b| a.name.cmp(&b.name))
         .collect())
     }
@@ -318,6 +324,10 @@ impl RepositoryQuery {
             run: self.run.clone(),
             name,
         })
+    }
+
+    async fn version(&self) -> &'static str {
+        get_version()
     }
 
     async fn file(&self, path: String) -> Result<File, Error> {
@@ -363,14 +373,7 @@ pub async fn graphiql() -> impl IntoResponse {
     response::Html(GraphiQLSource::build().endpoint("/").finish())
 }
 
-pub async fn run_server(run: Run, signal: SignalHandler) -> Result<(), Error> {
-    let schema = Schema::new(
-        RepositoryQuery::new(Arc::new(run)),
-        EmptyMutation,
-        EmptySubscription,
-    );
-    let app = Router::new().route("/", get(graphiql).post_service(GraphQL::new(schema)));
-
+pub async fn run_query_server(run: Run, signal: SignalHandler) -> Result<(), Error> {
     let subscriber = signal.subscribe().ok_or(Error::NoSignalHandler)?;
     println!("GraphiQL IDE: http://localhost:8000");
     webbrowser::open("http://localhost:8000")?;
@@ -380,7 +383,7 @@ pub async fn run_server(run: Run, signal: SignalHandler) -> Result<(), Error> {
             println!("Shutting down GraphQL server");
             return Ok(());
         }
-        result = axum::serve(TcpListener::bind("127.0.0.1:8000").await?, app) => {
+        result = server::run_server(None, Arc::new(run)) => {
             result?;
         }
     }
