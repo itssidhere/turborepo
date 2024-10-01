@@ -1,7 +1,7 @@
 mod file;
 mod package;
-mod task;
 mod server;
+mod task;
 
 use std::{io, sync::Arc};
 
@@ -18,8 +18,8 @@ use turbopath::AbsoluteSystemPathBuf;
 use turborepo_repository::package_graph::PackageName;
 
 use crate::{
-    query::{file::File, task::Task},
     get_version,
+    query::{file::File, task::Task},
     run::{builder::RunBuilder, Run},
     signal::SignalHandler,
 };
