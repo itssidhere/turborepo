@@ -212,6 +212,6 @@ Run the query
    WARNING  query command is experimental and may change in the future
   {
     "data": {
-      "version": "2.1.3-canary.2"
+      "version": "2.1.3"
     }
   }
